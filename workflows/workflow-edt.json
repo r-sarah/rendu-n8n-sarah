@@ -1,0 +1,210 @@
+{
+  "name": "workflow edt",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## objectif \n chaque semaine à partir de mes notes samsung, répartir les \ninfos(exemples : to do, rdv, ptit déj, météo de la semaine, tenu)  sur une nouvelle page notion (avoir un tableau de bord hebdomadaire) + compléter google agenda\n",
+        "height": 176,
+        "width": 320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -192,
+        -32
+      ],
+      "id": "a02a89d4-fe0a-40f4-97b0-13767babf9f7",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## affirmations\n- ça fonctionne en moins de 5s\n- coût quasi nul\n- facilement accessible"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -176,
+        176
+      ],
+      "id": "05459ab3-21ab-434f-9c3d-f6a1ce7a1c17",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "pageId": {
+          "__rl": true,
+          "value": "https://app.notion.com/p/test-N8N-3ea08171f9b28087bf49dec73a8b9b73",
+          "mode": "url"
+        },
+        "title": "=planning de la semaine :  {{ $json['Day of week'] }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 3,
+      "position": [
+        752,
+        48
+      ],
+      "id": "f3c9efc7-b4ff-410d-81e9-298831d26878",
+      "name": "Create a page",
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "pgOT4aFOWiFrGnWK",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        448,
+        256
+      ],
+      "id": "72e972b9-c22e-4173-b48f-d16a3e0fdb44",
+      "name": "Send message and wait for response",
+      "webhookId": "24b217ba-0875-4351-9445-69eee1b79714"
+    },
+    {
+      "parameters": {
+        "content": "n8ncli envs edit prod \\\n  --url \"https://n8n.mondomaine.com\" \\\n  --access-token \"mcp_token_...\""
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        128,
+        416
+      ],
+      "id": "dd2d56b7-215e-42e7-b060-55749a81faec",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "sranganadane@eugeniaschool.com",
+          "mode": "list",
+          "cachedResultName": "sranganadane@eugeniaschool.com"
+        },
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        928,
+        48
+      ],
+      "id": "8df24c0d-3b97-4651-9038-2147517a84b1",
+      "name": "Create an event",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "NCEMBk0pe4GmvbOE",
+          "name": "agenda"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "maxResults": 1,
+        "filters": {
+          "sender": "sranganadane@eugeniaschool.com"
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        191.87343464641935,
+        61.51855904551905
+      ],
+      "id": "89590e6e-ec9f-4803-8794-d9387a0d1a3e",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "AqzvRAjHMd4OkgrO",
+          "name": "sarah gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash-lite",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash-lite"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Analyse l'e-mail suivant qui contient plusieurs informations pour la semaine. \nExtrais CHAQUE élément sous forme d'une liste (tableau JSON) d'objets exacts :\n\n[\n  {\n    \"categorie\": \"Petit-dejeuner\" | \"Tenue\" | \"To-Do\" | \"RDV\",\n    \"contenu_notion\": \"description ou texte à insérer\",\n    \"est_rdv\": true/false,\n    \"rdv_titre\": \"titre du rdv (ou null si pas un RDV)\",\n    \"rdv_date_debut\": \"YYYY-MM-DDTHH:mm:ss (ou null)\",\n    \"rdv_date_fin\": \"YYYY-MM-DDTHH:mm:ss (ou null)\"\n  }\n]\n\nRègles :\n- Découpe le texte par idée/élément.\n- Renvoie UNIQUEMENT le tableau JSON valide.\n\nTexte à analyser :\n{{ $json.snippet }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        400,
+        48
+      ],
+      "id": "b799376a-ff37-4361-b3a5-125a10fc5ae7",
+      "name": "Message a model"
+    }
+  ],
+  "connections": {
+    "Create a page": {
+      "main": [
+        [
+          {
+            "node": "Create an event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Create a page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "pinData": {}
+}

@@ -1,0 +1,21 @@
+# Secrets n8ncli et configuration d'instance
+.n8ncli-global.json
+.n8ncli/
+n8n-cli.json
+*.env
+.env
+
+# Secrets n8n
+credentials.json
+config.old.json
+
+# Caches et artefacts de synchronisation
+.cache/
+sync-state.json
+n8n/references/
+node_modules/
+
+# Systeme
+.DS_Store
+Thumbs.db
+*.log
