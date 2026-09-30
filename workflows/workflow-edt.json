@@ -37,7 +37,9 @@
           "value": "https://app.notion.com/p/test-N8N-3ea08171f9b28087bf49dec73a8b9b73",
           "mode": "url"
         },
-        "title": "=planning de la semaine :  {{ $json['Day of week'] }}",
+        "title": "=Planning — {{ $json.semaineLibelle }}",
+        "contentType": "markdown",
+        "markdown": "={{ $json.markdownNotion }}",
         "options": {}
       },
       "type": "n8n-nodes-base.notion",
@@ -54,21 +56,6 @@
           "name": "Notion account"
         }
       }
-    },
-    {
-      "parameters": {
-        "operation": "sendAndWait",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.whatsApp",
-      "typeVersion": 1.1,
-      "position": [
-        448,
-        256
-      ],
-      "id": "72e972b9-c22e-4173-b48f-d16a3e0fdb44",
-      "name": "Send message and wait for response",
-      "webhookId": "24b217ba-0875-4351-9445-69eee1b79714"
     },
     {
       "parameters": {
@@ -91,7 +78,12 @@
           "mode": "list",
           "cachedResultName": "sranganadane@eugeniaschool.com"
         },
-        "additionalFields": {}
+        "start": "={{ $json.debut }}",
+        "end": "={{ $json.fin }}",
+        "additionalFields": {
+          "description": "={{ $json.description }}",
+          "summary": "={{ $json.titre }}"
+        }
       },
       "type": "n8n-nodes-base.googleCalendar",
       "typeVersion": 1.3,
@@ -110,35 +102,8 @@
     },
     {
       "parameters": {
-        "pollTimes": {
-          "item": [
-            {
-              "mode": "everyMinute"
-            }
-          ]
-        },
-        "maxResults": 1,
-        "filters": {
-          "sender": "sranganadane@eugeniaschool.com"
-        }
-      },
-      "type": "n8n-nodes-base.gmailTrigger",
-      "typeVersion": 1.4,
-      "position": [
-        191.87343464641935,
-        61.51855904551905
-      ],
-      "id": "89590e6e-ec9f-4803-8794-d9387a0d1a3e",
-      "name": "Gmail Trigger",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "AqzvRAjHMd4OkgrO",
-          "name": "sarah gmail"
-        }
-      }
-    },
-    {
-      "parameters": {
+        "resource": "text",
+        "operation": "message",
         "modelId": {
           "__rl": true,
           "value": "models/gemini-2.5-flash-lite",
@@ -148,7 +113,7 @@
         "messages": {
           "values": [
             {
-              "content": "=Analyse l'e-mail suivant qui contient plusieurs informations pour la semaine. \nExtrais CHAQUE élément sous forme d'une liste (tableau JSON) d'objets exacts :\n\n[\n  {\n    \"categorie\": \"Petit-dejeuner\" | \"Tenue\" | \"To-Do\" | \"RDV\",\n    \"contenu_notion\": \"description ou texte à insérer\",\n    \"est_rdv\": true/false,\n    \"rdv_titre\": \"titre du rdv (ou null si pas un RDV)\",\n    \"rdv_date_debut\": \"YYYY-MM-DDTHH:mm:ss (ou null)\",\n    \"rdv_date_fin\": \"YYYY-MM-DDTHH:mm:ss (ou null)\"\n  }\n]\n\nRègles :\n- Découpe le texte par idée/élément.\n- Renvoie UNIQUEMENT le tableau JSON valide.\n\nTexte à analyser :\n{{ $json.snippet }}"
+              "content": "=Tu es un assistant qui analyse des notes personnelles hebdomadaires.\n\nDate de reference : nous sommes le {{ $now.setZone('Europe/Paris').toFormat('cccc d LLLL yyyy') }}.\nRegle absolute sur les dates : si le texte ne donne pas l annee, utilise l annee de la date de reference et la semaine a venir. N invente jamais d annee. Si le jour de la semaine et la date se contredisent, privilegie la date numerique. Si aucune annee plausible n existe, mets null.\n\nRepere chaque information utile (petit-dejeuner, tenue, tache, rendez-vous) et renvoie UNIQUEMENT un tableau JSON.\n\nFormat STRICT, sans texte autour :\n[\n  {\n    \"categorie\": \"Petit-dejeuner\" | \"Tenue\" | \"To-Do\" | \"RDV\",\n    \"contenu_notion\": \"texte court a inserer dans la page\",\n    \"est_rdv\": true | false,\n    \"rdv_titre\": \"titre du rendez-vous, ou null\",\n    \"rdv_date_debut\": \"YYYY-MM-DDTHH:mm:ss, ou null\",\n    \"rdv_date_fin\": \"YYYY-MM-DDTHH:mm:ss, ou null\"\n  }\n]\n\nRegles :\n- Un objet par idee distincte, meme si elles sont sur la meme ligne.\n- categorie vaut exactement une des quatre valeurs.\n- est_rdv a true uniquement pour un rendez-vous, et alors les deux dates sont obligatoires au format ISO local.\n\nTexte a analyser :\n{{ $json.text || $json.snippet }}"
             }
           ]
         },
@@ -164,10 +129,143 @@
       ],
       "id": "b799376a-ff37-4361-b3a5-125a10fc5ae7",
       "name": "Message a model"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const NL = String.fromCharCode(10);\nconst ORDRE = ['Petit-dejeuner', 'Tenue', 'To-Do', 'RDV'];\nconst LIBELLES = { 'Petit-dejeuner': 'Petit-déjeuner', 'Tenue': 'Tenue', 'To-Do': 'À faire', 'RDV': 'Rendez-vous' };\nconst MOIS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];\nconst JOURS_MAX_PASSE = 30;\nconst JOURS_MAX_FUTUR = 400;\n\nfunction texte(v) {\n  if (v === null || v === undefined) return '';\n  return String(v).trim();\n}\n\nfunction deux(n) {\n  return (n < 10 ? '0' : '') + n;\n}\n\n// Conserve l heure murale donnee par le modele : la chaine naive est renvoyee\n// telle quelle, sans conversion UTC, pour que le noeud Calendar applique le\n// fuseau du calendrier.\nfunction dateIsoValide(v) {\n  const s = texte(v);\n  if (s === '') return null;\n  const m = s.match(/^(\\d{4})-(\\d{2})-(\\d{2})[T ](\\d{2}):(\\d{2})(?::(\\d{2}))?/);\n  if (!m) return null;\n  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6] || 0));\n  if (isNaN(d.getTime())) return null;\n  const jours = (d.getTime() - Date.now()) / 86400000;\n  if (jours < -JOURS_MAX_PASSE) return null;\n  if (jours > JOURS_MAX_FUTUR) return null;\n  return { iso: m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + ':' + m[5] + ':' + (m[6] || '00'), date: d };\n}\n\nfunction parseTableau(s) {\n  const i = s.indexOf('[');\n  const j = s.lastIndexOf(']');\n  if (i >= 0 && j > i) {\n    try { return JSON.parse(s.slice(i, j + 1)); } catch (e) { return null; }\n  }\n  return null;\n}\n\nfunction versTableau(brut, profondeur) {\n  const p = profondeur || 0;\n  if (brut === null || brut === undefined || p > 5) return [];\n  if (Array.isArray(brut)) return brut;\n  if (typeof brut === 'string') {\n    const arr = parseTableau(brut);\n    return arr === null ? [] : arr;\n  }\n  if (typeof brut !== 'object') return [];\n  if (texte(brut.categorie) !== '' || texte(brut.contenu_notion) !== '') return [brut];\n  if (brut.content) {\n    if (typeof brut.content === 'string') {\n      const arr = parseTableau(brut.content);\n      if (arr !== null) return arr;\n    }\n    if (brut.content.parts) {\n      for (const part of brut.content.parts) {\n        if (part && typeof part.text === 'string') {\n          const arr = parseTableau(part.text);\n          if (arr !== null) return arr;\n        }\n      }\n    }\n  }\n  for (const cle of ['response', 'output', 'text', 'data', 'body', 'message', 'result', 'elements', 'items']) {\n    if (brut[cle] !== undefined) {\n      const res = versTableau(brut[cle], p + 1);\n      if (res.length > 0) return res;\n    }\n  }\n  for (const cle of Object.keys(brut)) {\n    if (Array.isArray(brut[cle])) {\n      const res = versTableau(brut[cle], p + 1);\n      if (res.length > 0) return res;\n    }\n  }\n  return [];\n}\n\nfunction numeroSemaine(d) {\n  const c = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));\n  const jour = c.getUTCDay() || 7;\n  c.setUTCDate(c.getUTCDate() + 4 - jour);\n  const debut = new Date(Date.UTC(c.getUTCFullYear(), 0, 1));\n  return Math.ceil(((c.getTime() - debut.getTime()) / 86400000 + 1) / 7);\n}\n\nfunction court(d) {\n  return d.getDate() + ' ' + MOIS[d.getMonth()].slice(0, 4) + '.';\n}\n\nfunction heure(d) {\n  return deux(d.getHours()) + 'h' + deux(d.getMinutes());\n}\n\nconst maintenant = new Date();\nconst decalage = maintenant.getDay() === 0 ? -6 : 1 - maintenant.getDay();\nconst lundi = new Date(maintenant.getTime());\nlundi.setDate(maintenant.getDate() + decalage);\nconst dimanche = new Date(lundi.getTime());\ndimanche.setDate(lundi.getDate() + 6);\nconst semaineLibelle = 'Semaine ' + numeroSemaine(lundi) + ' · ' + court(lundi) + ' – ' + court(dimanche) + ' ' + dimanche.getFullYear();\n\nconst source = $input.first().json || {};\nconst elements = versTableau(source);\n\nconst valides = [];\nconst rdv = [];\nconst ignores = [];\n\nfor (const e of elements) {\n  if (!e || typeof e !== 'object') continue;\n  const contenu = texte(e.contenu_notion);\n  if (contenu === '') continue;\n  let categorie = texte(e.categorie);\n  if (ORDRE.indexOf(categorie) === -1) categorie = 'To-Do';\n  const estRdv = e.est_rdv === true || texte(e.est_rdv) === 'true' || categorie === 'RDV';\n  valides.push({ categorie: categorie, contenu: contenu });\n  if (estRdv) {\n    const d = dateIsoValide(e.rdv_date_debut);\n    if (d === null) {\n      ignores.push({ titre: texte(e.rdv_titre) || contenu.slice(0, 60), raison: 'date absente ou hors bornes' });\n    } else {\n      const f = dateIsoValide(e.rdv_date_fin);\n      const fin = (f === null || f.date.getTime() < d.date.getTime())\n        ? new Date(d.date.getTime() + 3600000)\n        : f.date;\n      rdv.push({\n        titre: texte(e.rdv_titre) || contenu.slice(0, 80),\n        debut: d.iso,\n        fin: isoNaif(fin),\n        description: contenu\n      });\n    }\n  }\n}\n\nfunction isoNaif(d) {\n  return d.getFullYear() + '-' + deux(d.getMonth() + 1) + '-' + deux(d.getDate()) +\n    'T' + deux(d.getHours()) + ':' + deux(d.getMinutes()) + ':' + deux(d.getSeconds());\n}\n\nconst lignes = ['# ' + semaineLibelle, ''];\nif (valides.length === 0) {\n  lignes.push('Aucun élément exploitable trouvé dans ce message.');\n} else {\n  for (const cat of ORDRE) {\n    const duCat = valides.filter(v => v.categorie === cat);\n    if (duCat.length === 0) continue;\n    lignes.push('## ' + LIBELLES[cat], '');\n    for (const v of duCat) {\n      if (cat === 'RDV') {\n        const trouve = rdv.find(r => r.description === v.contenu);\n        const d = trouve ? dateIsoValide(trouve.debut) : null;\n        lignes.push(d ? '- ' + v.contenu + ' (' + court(d.date) + ' ' + heure(d.date) + ')' : '- ' + v.contenu + ' (date a confirmer)');\n      } else {\n        lignes.push(cat === 'To-Do' ? '- [ ] ' + v.contenu : '- ' + v.contenu);\n      }\n    }\n    lignes.push('');\n  }\n}\nif (ignores.length > 0) {\n  lignes.push('> ' + ignores.length + ' rendez-vous non ajoute au calendrier : date absente ou aberrante.');\n  lignes.push('');\n}\n\nreturn [{\n  json: {\n    semaineLibelle: semaineLibelle,\n    markdownNotion: lignes.join(NL),\n    nbElements: valides.length,\n    nbRdv: rdv.length,\n    rdv: rdv,\n    rendezVousIgnores: ignores\n  }\n}];"
+      },
+      "id": "39acebb1-0a58-4a79-bdf0-8c4a5e2039f5",
+      "name": "Preparer la semaine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        48
+      ],
+      "notes": "Normalise la sortie du modele, calcule le libelle de la semaine, construit le markdown de la page Notion et isole les rendez-vous dates."
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "rdv",
+        "options": {}
+      },
+      "id": "2670ecc6-afae-430f-bc6a-d2e112e6733f",
+      "name": "Eclater les rendez-vous",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        576,
+        288
+      ],
+      "notes": "Un item par rendez-vous. Un tableau vide ne produit aucun item, le noeud Calendar est alors saute."
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "maxResults": 1,
+        "filters": {
+          "q": "newer_than:7d",
+          "readStatus": "both",
+          "sender": "sranganadane@eugeniaschool.com",
+          "simple": false
+        }
+      },
+      "id": "556e05d5-92d4-4a47-ac08-c11875dc64bc",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        224,
+        48
+      ],
+      "notes": "Declenche quand le mail de synthese de la semaine arrive. Polling toutes les minutes.",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "AqzvRAjHMd4OkgrO",
+          "name": "sarah gmail"
+        }
+      }
+    },
+    {
+      "id": "4c693c58-3125-41ec-9e88-2800474b0ce1",
+      "name": "Test manuel",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        320
+      ],
+      "parameters": {},
+      "notes": "Declencheur de test, a supprimer apres validation."
+    },
+    {
+      "id": "635e43f5-2882-4642-88ce-087ace3dcbd5",
+      "name": "Email de test",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -352,
+        320
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "text",
+              "value": "Notes de la semaine\n\nPetit-dejeuner :\n- lundi et mardi :Croissant et cafe\n- mercredi : yaourt et muesli\n\nTenue :\n- jeudi : jean bleu et pull gris\n- vendredi : robe noire\n\nTaches :\n- envoyer le devis a M. Perrin avant vendredi\n- acheter le cadeau d'anniversaire de Claire\n\nRendez-vous :\n- medecin, jeudi 1 octobre de 14h00 a 15h00, cabinet du Dr Bernard\n- reunion de classe de Lola, vendredi 2 octobre de 18h00 a 20h00, gymnase",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "subject",
+              "value": "Notes semaine du 29 septembre",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "notes": "Faux email injecte pour tester la chaine d extraction. A supprimer apres validation."
     }
   ],
   "connections": {
-    "Create a page": {
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Preparer la semaine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparer la semaine": {
+      "main": [
+        [
+          {
+            "node": "Create a page",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Eclater les rendez-vous",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eclater les rendez-vous": {
       "main": [
         [
           {
@@ -189,11 +287,22 @@
         ]
       ]
     },
-    "Message a model": {
+    "Test manuel": {
       "main": [
         [
           {
-            "node": "Create a page",
+            "node": "Email de test",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email de test": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
             "type": "main",
             "index": 0
           }
