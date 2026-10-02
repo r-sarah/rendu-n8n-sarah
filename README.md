@@ -7,6 +7,7 @@ Versionnement des workflows n8n au format **Workflow SDK** (`*.workflow.ts`), le
 | Fichier | Description |
 |---|---|
 | `workflows/workflow-edt.workflow.ts` | Hub d'organisation hebdomadaire (11 nœuds) |
+| `workflows/rag-supabase.workflow.ts` | RAG Supabase : ingestion de PDF + answering (21 nœuds) |
 
 ## Format et validation
 
@@ -17,6 +18,16 @@ l'API MCP.
 ```powershell
 n8ncli validate workflows\workflow-edt.workflow.ts
 n8ncli lint workflows\workflow-edt.workflow.ts
+```
+
+### Exception : `rag-supabase.workflow.ts`
+
+`extractFromFile` est épinglé en version **1**, alors que la dernière est 1.1. C'est
+délibéré : en 1.1, `binaryPropertyName` est masqué pour l'opération `pdf`, ce qui ferait
+pointer le nœud vers le mauvais champ binaire et casserait l'ingestion. Valider avec :
+
+```powershell
+n8ncli validate --no-version-check workflows\rag-supabase.workflow.ts
 ```
 
 ## Standards non respectés (assumés)
@@ -47,6 +58,13 @@ Il faut les recréer ou les renommer à l'import.
 | Gmail Trigger | `gmailOAuth2` | `sarah gmail` |
 | Creer la page | `notionOAuth2Api` | `Notion account` |
 | Creer l evenement | `googleCalendarOAuth2Api` | `agenda` |
+| Embeddings Google Gemini | `googlePalmApi` | `api` |
+| Gemini - Reecriture / Reranking / Generation | `googlePalmApi` | `api` |
+| Supabase Vector Store / Recherche vectorielle Supabase | `supabaseApi` | `n8n rag` |
+
+Le nœud `RAG Supabase` utilise deux modèles distincts, à ne pas confondre :
+`gemini-embedding-001` pour l'embedding (identique à l'ingestion et à la recherche,
+sinon les vecteurs deviennent incomparables), `gemini-3-flash-preview` pour le langage.
 
 ## Sécurité
 
